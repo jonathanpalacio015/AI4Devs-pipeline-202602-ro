@@ -17,6 +17,8 @@ jobs:
   backend-tests:
     name: Run Backend Tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     # Solo ejecutar si el push está asociado a un Pull Request abierto
     if: github.event.pull_request != null
@@ -29,6 +31,8 @@ jobs:
       # Clonar el repositorio en el runner
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       # Configurar la versión de Node.js
       - name: Set up Node.js
@@ -53,6 +57,8 @@ jobs:
     name: Build Backend
     runs-on: ubuntu-latest
     needs: backend-tests   # Solo se ejecuta si los tests pasan
+    permissions:
+      contents: read
 
     # Solo ejecutar si el push está asociado a un Pull Request abierto
     if: github.event.pull_request != null
@@ -64,6 +70,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -80,6 +88,14 @@ jobs:
       - name: Build project
         run: npm run build
 
+      # Subir artefactos del build para desplegar en EC2
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-dist
+          path: backend/dist/
+          retention-days: 1
+
   # ─────────────────────────────────────────────
   # JOB 3: Desplegar en servidor EC2 vía SSH
   # ─────────────────────────────────────────────
@@ -87,11 +103,22 @@ jobs:
     name: Deploy to EC2
     runs-on: ubuntu-latest
     needs: backend-build   # Solo se ejecuta si el build fue exitoso
+    permissions:
+      contents: read
+    concurrency:
+      group: deploy-ec2
+      cancel-in-progress: false
 
     # Solo ejecutar si el push está asociado a un Pull Request abierto
     if: github.event.pull_request != null
 
     steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-dist
+          path: backend/dist/
+
       - name: Deploy via SSH to EC2
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -107,14 +134,20 @@ jobs:
 
           # Comandos que se ejecutan de forma remota en el servidor EC2
           script: |
+            set -e  # Salir inmediatamente si cualquier comando falla
+            
             # Navegar al directorio del proyecto en el servidor
             cd ~/app/backend
 
-            # Obtener los últimos cambios de la rama del PR
-            git pull origin ${{ github.head_ref }}
+            # Obtener los últimos cambios usando el SHA del commit (seguro contra inyección)
+            git fetch origin ${{ github.event.pull_request.head.sha }}
+            git checkout ${{ github.event.pull_request.head.sha }}
 
             # Instalar solo dependencias de producción
             npm install --production
 
             # Reiniciar el proceso con PM2 para aplicar los cambios
-            pm2 restart backend 
+            pm2 restart backend
+            
+            # Verificar que el proceso está corriendo
+            pm2 status backend 
