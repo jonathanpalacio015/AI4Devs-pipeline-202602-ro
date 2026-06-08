@@ -20,9 +20,6 @@ jobs:
     permissions:
       contents: read
 
-    # Solo ejecutar si el push está asociado a un Pull Request abierto
-    if: github.event.pull_request != null
-
     defaults:
       run:
         working-directory: backend   # Todos los comandos se ejecutan desde /backend
@@ -30,13 +27,13 @@ jobs:
     steps:
       # Clonar el repositorio en el runner
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
 
       # Configurar la versión de Node.js
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49e8c2e5d2647e20f7eae47c36ae7cfdb7fa0eaf # v4.1.1
         with:
           node-version: '20'
           cache: 'npm'
@@ -60,21 +57,18 @@ jobs:
     permissions:
       contents: read
 
-    # Solo ejecutar si el push está asociado a un Pull Request abierto
-    if: github.event.pull_request != null
-
     defaults:
       run:
         working-directory: backend
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49e8c2e5d2647e20f7eae47c36ae7cfdb7fa0eaf # v4.1.1
         with:
           node-version: '20'
           cache: 'npm'
@@ -90,7 +84,7 @@ jobs:
 
       # Subir artefactos del build para desplegar en EC2
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@3426c7c7147c28eab195829e635da8ec89b11846 # v4.2.2
         with:
           name: backend-dist
           path: backend/dist/
@@ -109,12 +103,9 @@ jobs:
       group: deploy-ec2
       cancel-in-progress: false
 
-    # Solo ejecutar si el push está asociado a un Pull Request abierto
-    if: github.event.pull_request != null
-
     steps:
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@9bc31d5ccc31df68ecc82a36668f559709a13953 # v4.1.8
         with:
           name: backend-dist
           path: backend/dist/
