@@ -1,0 +1,120 @@
+# Backend CI/CD Pipeline
+# Se dispara únicamente en push a ramas que tengan un Pull Request abierto.
+
+name: Backend CI/CD Pipeline
+
+on:
+  pull_request:
+    types: [synchronize]
+    branches:
+      - '**'   # Escucha PRs abiertos contra cualquier rama base
+
+jobs:
+
+  # ─────────────────────────────────────────────
+  # JOB 1: Ejecutar los tests del backend
+  # ─────────────────────────────────────────────
+  backend-tests:
+    name: Run Backend Tests
+    runs-on: ubuntu-latest
+
+    # Solo ejecutar si el push está asociado a un Pull Request abierto
+    if: github.event.pull_request != null
+
+    defaults:
+      run:
+        working-directory: backend   # Todos los comandos se ejecutan desde /backend
+
+    steps:
+      # Clonar el repositorio en el runner
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Configurar la versión de Node.js
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      # Instalar dependencias
+      - name: Install dependencies
+        run: npm install
+
+      # Ejecutar la suite de tests
+      - name: Run tests
+        run: npm test
+
+  # ─────────────────────────────────────────────
+  # JOB 2: Generar el build del backend
+  # ─────────────────────────────────────────────
+  backend-build:
+    name: Build Backend
+    runs-on: ubuntu-latest
+    needs: backend-tests   # Solo se ejecuta si los tests pasan
+
+    # Solo ejecutar si el push está asociado a un Pull Request abierto
+    if: github.event.pull_request != null
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      # Instalar dependencias (incluidas devDependencies para poder compilar)
+      - name: Install dependencies
+        run: npm install
+
+      # Compilar el proyecto (TypeScript → JavaScript)
+      - name: Build project
+        run: npm run build
+
+  # ─────────────────────────────────────────────
+  # JOB 3: Desplegar en servidor EC2 vía SSH
+  # ─────────────────────────────────────────────
+  deploy-ec2:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    needs: backend-build   # Solo se ejecuta si el build fue exitoso
+
+    # Solo ejecutar si el push está asociado a un Pull Request abierto
+    if: github.event.pull_request != null
+
+    steps:
+      - name: Deploy via SSH to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          # ── Credenciales almacenadas como GitHub Secrets ──────────────────
+          # Configúralas en: Settings → Secrets and variables → Actions
+          #   EC2_INSTANCE       → IP pública o dominio del servidor EC2
+          #   EC2_USER           → Usuario SSH (ej: ubuntu, ec2-user)
+          #   EC2_SSH_PRIVATE_KEY → Contenido de la clave privada PEM (.pem)
+          # ─────────────────────────────────────────────────────────────────
+          host: ${{ secrets.EC2_INSTANCE }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+
+          # Comandos que se ejecutan de forma remota en el servidor EC2
+          script: |
+            # Navegar al directorio del proyecto en el servidor
+            cd ~/app/backend
+
+            # Obtener los últimos cambios de la rama del PR
+            git pull origin ${{ github.head_ref }}
+
+            # Instalar solo dependencias de producción
+            npm install --production
+
+            # Reiniciar el proceso con PM2 para aplicar los cambios
+            pm2 restart backend 
